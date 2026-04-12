@@ -6,6 +6,8 @@ const SkeletonCard = () => (
   <div className="skeleton-card">
     <div className="skeleton-left">
       <div className="skeleton-box skeleton-period" />
+    </div>
+    <div className="skeleton-time-col">
       <div className="skeleton-box skeleton-time" />
       <div className="skeleton-box skeleton-time" />
     </div>
