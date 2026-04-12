@@ -11,7 +11,7 @@ const Header = ({ selectedGroup, onChangeGroup }) => {
         {/* Branding */}
         <div className="header-brand">
           <img
-            src="/icons/icon-192x192.png"
+            src="/viko-logo.png"
             alt="VIKO Logo"
             className="header-logo-img"
           />

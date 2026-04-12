@@ -24,6 +24,24 @@ export default defineConfig({
         categories: ["education", "utilities"],
         icons: [
           {
+            src: "/icons/icon-120x120.png",
+            sizes: "120x120",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/icons/icon-152x152.png",
+            sizes: "152x152",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/icons/icon-180x180.png",
+            sizes: "180x180",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
             src: "/icons/icon-192x192.png",
             sizes: "192x192",
             type: "image/png",
@@ -36,7 +54,7 @@ export default defineConfig({
             purpose: "any",
           },
           {
-            // Maskable icon — Android adaptive icons use this for rounded/squircle shapes
+            // Maskable — Android adaptive icons (squircle/circle shapes)
             src: "/icons/icon-512x512.png",
             sizes: "512x512",
             type: "image/png",
