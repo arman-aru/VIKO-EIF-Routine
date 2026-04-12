@@ -260,6 +260,37 @@ function formatScheduleMessage(lectures, date, groupShort) {
   return header + lines.join("\n") + "\n\n🎓 _Good luck today!_";
 }
 
+// ─── Group picker keyboard ─────────────────────────────────────────────
+async function sendGroupPicker(bot, chatId, messageText) {
+  const groups = await loadGroups();
+
+  if (groups.length === 0) {
+    // Fallback to text input if groups couldn't be loaded
+    conversationState[chatId] = "awaiting_group";
+    return bot.sendMessage(
+      chatId,
+      `${messageText}\n\n📝 Type your group name (e.g. *PI24E*, *EI23A*):`,
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  // Build inline keyboard — 3 buttons per row
+  const buttons = groups.map((g) => ({
+    text: g.short,
+    callback_data: `setgroup:${g.short}:${g.id}`,
+  }));
+
+  const keyboard = [];
+  for (let i = 0; i < buttons.length; i += 3) {
+    keyboard.push(buttons.slice(i, i + 3));
+  }
+
+  return bot.sendMessage(chatId, messageText, {
+    parse_mode: "Markdown",
+    reply_markup: { inline_keyboard: keyboard },
+  });
+}
+
 // ─── Bot setup ─────────────────────────────────────────────────────────
 function startBot() {
   if (!TOKEN) {
@@ -281,16 +312,16 @@ function startBot() {
     if (subscriber) {
       return bot.sendMessage(
         chatId,
-        `👋 Welcome back, *${firstName}!*\n\nYour current group is *${subscriber.groupShort}*.\n\nCommands:\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/setgroup — Change group\n/stop — Stop notifications`,
+        `👋 Welcome back, *${firstName}!*\n\nYour current group: *${subscriber.groupShort}*\n\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/setgroup — Change group\n/stop — Stop notifications`,
         { parse_mode: "Markdown" }
       );
     }
 
-    conversationState[chatId] = "awaiting_group";
-    bot.sendMessage(
+    // New user — show group picker immediately
+    await sendGroupPicker(
+      bot,
       chatId,
-      `👋 Hi *${firstName}!* Welcome to *VIKO EIF Timetable Bot* 🎓\n\nEvery evening at *7:00 PM* I'll send you tomorrow's schedule so you can prepare the night before.\n\n📝 First, tell me your study group.\nType your group name (e.g. *PI24E*, *EI23A*):`,
-      { parse_mode: "Markdown" }
+      `👋 Hi *${firstName}!* Welcome to *VIKO EIF Timetable Bot* 🎓\n\nEvery evening at *7:00 PM* you'll get tomorrow's schedule so you can prepare the night before.\n\n👇 *Select your study group:*`
     );
   });
 
@@ -302,11 +333,41 @@ function startBot() {
     if (inline) {
       await handleGroupInput(bot, chatId, inline, msg.from?.username);
     } else {
-      conversationState[chatId] = "awaiting_group";
-      bot.sendMessage(chatId, "📝 What is your group? (e.g. *PI24E*, *EI23A*)", {
-        parse_mode: "Markdown",
-      });
+      await sendGroupPicker(
+        bot,
+        chatId,
+        "🔄 *Change your group*\n\n👇 Select your study group:"
+      );
     }
+  });
+
+  // ── Inline keyboard callback (group selection) ─────────────────────
+  bot.on("callback_query", async (query) => {
+    const chatId = query.message.chat.id;
+    const data = query.data;
+
+    if (!data?.startsWith("setgroup:")) return;
+
+    const [, groupShort, groupId] = data.split(":");
+    const username = query.from?.username;
+
+    // Acknowledge the button tap immediately
+    await bot.answerCallbackQuery(query.id);
+
+    // Remove the keyboard from the original message
+    await bot.editMessageReplyMarkup(
+      { inline_keyboard: [] },
+      { chat_id: chatId, message_id: query.message.message_id }
+    ).catch(() => {});
+
+    delete conversationState[chatId];
+    await upsertSubscriber(chatId, groupShort, groupId, username);
+
+    bot.sendMessage(
+      chatId,
+      `✅ *Group set to ${groupShort}!*\n\nYou'll receive tomorrow's schedule every evening at *7:00 PM* 📬\n\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/week — This week overview`,
+      { parse_mode: "Markdown" }
+    );
   });
 
   // ── /today ─────────────────────────────────────────────────────────
