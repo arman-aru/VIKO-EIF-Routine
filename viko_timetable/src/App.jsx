@@ -9,6 +9,7 @@ import { getPayload } from "./payloads";
 import useFetch from "./useFetch";
 
 import BottomNav from "./components/BottomNav";
+import InstallPrompt from "./components/InstallPrompt";
 import GroupModal from "./components/GroupModal";
 import Header from "./components/Header";
 import ScheduleView from "./components/ScheduleView";
@@ -304,6 +305,8 @@ const App = () => {
           onClose={selectedGroup ? () => setShowGroupModal(false) : null}
         />
       )}
+
+      <InstallPrompt />
 
       <ToastContainer
         position="top-center"
