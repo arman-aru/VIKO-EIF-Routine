@@ -40,6 +40,12 @@ const App = () => {
   const [subjects, setSubjects] = useState([]);
   const [classrooms, setClassrooms] = useState([]);
   const [groups, setGroups] = useState(() => {
+    // v2: invalidate old cache that may have contained subjects instead of groups
+    const version = localStorage.getItem("groups_list_v");
+    if (version !== "2") {
+      localStorage.removeItem("groups_list");
+      localStorage.setItem("groups_list_v", "2");
+    }
     const cached = localStorage.getItem("groups_list");
     return cached ? JSON.parse(cached) : [];
   });
@@ -70,14 +76,40 @@ const App = () => {
   );
 
   // Parse metadata from /all response
-  // Payload order: teachers[0], classes[1], classrooms[2], subjects[3]
+  // Identify tables by content — do NOT rely on index order (API may reorder)
+  // Groups: short codes like "PI24E", "EI23A" — short <= 8 chars, alphanumeric
+  // Teachers: have firstname/lastname fields
+  // Classrooms: short codes like "A101", "B203" — short <= 6 chars, no spaces
+  // Subjects: long descriptive names with spaces
   useEffect(() => {
     if (!allInfo) return;
 
-    const allTeachers   = allInfo?.r?.tables[0]?.data_rows || [];
-    const allGroups     = allInfo?.r?.tables[1]?.data_rows || [];
-    const allClassrooms = allInfo?.r?.tables[2]?.data_rows || [];
-    const allSubjects   = allInfo?.r?.tables[3]?.data_rows || [];
+    const tables = allInfo?.r?.tables || [];
+    const allRows = (i) => tables[i]?.data_rows || [];
+
+    // Find teachers: rows that have a firstname field
+    const teacherTable = tables.find((t) =>
+      (t?.data_rows || []).some((r) => r.firstname !== undefined)
+    );
+    // Find groups: rows whose short is 2–8 chars, all alphanumeric, no spaces
+    const groupTable = tables.find((t) =>
+      (t?.data_rows || []).some((r) => /^[A-Za-z]{1,4}\d{2}/.test(r.short || ""))
+    );
+    // Find subjects: rows whose name has spaces (long course names)
+    const subjectTable = tables.find((t) =>
+      t !== teacherTable &&
+      t !== groupTable &&
+      (t?.data_rows || []).some((r) => (r.name || "").includes(" "))
+    );
+    // Classrooms: the remaining table
+    const classroomTable = tables.find(
+      (t) => t !== teacherTable && t !== groupTable && t !== subjectTable
+    );
+
+    const allTeachers   = teacherTable?.data_rows   || [];
+    const allGroups     = groupTable?.data_rows      || [];
+    const allSubjects   = subjectTable?.data_rows    || [];
+    const allClassrooms = classroomTable?.data_rows  || [];
 
     setTeachers(allTeachers);
     setSubjects(allSubjects);
