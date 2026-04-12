@@ -3,7 +3,8 @@ const cron = require("node-cron");
 const axios = require("axios");
 const fs = require("fs").promises;
 const path = require("path");
-const moment = require("moment");
+const moment = require("moment-timezone");
+
 
 // ─── Config ────────────────────────────────────────────────────────────
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -245,7 +246,7 @@ function formatScheduleMessage(lectures, date, groupShort) {
     );
   }
 
-  const lines = lectures.map((lec, i) => {
+  const lines = lectures.map((lec) => {
     const emoji = PERIOD_EMOJI[lec.period - 1] || `${lec.period}.`;
     const changed = lec.changed ? " ⚠️ _Changed_" : "";
     const subgroup = lec.subgroup ? ` \\[${lec.subgroup}\\]` : "";
@@ -312,17 +313,24 @@ function startBot() {
     if (subscriber) {
       return bot.sendMessage(
         chatId,
-        `👋 Welcome back, *${firstName}!*\n\nYour current group: *${subscriber.groupShort}*\n\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/setgroup — Change group\n/stop — Stop notifications`,
+        `👋 Welcome back, *${firstName}!*\n\nYour group: *${subscriber.groupShort}*\n\n📋 *Commands:*\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/week — Full week overview\n/setgroup — Change group\n/stop — Stop notifications\n/help — How to use this bot`,
         { parse_mode: "Markdown" }
       );
     }
 
-    // New user — show group picker immediately
-    await sendGroupPicker(
-      bot,
+    // New user — explain the bot then show group picker
+    await bot.sendMessage(
       chatId,
-      `👋 Hi *${firstName}!* Welcome to *VIKO EIF Timetable Bot* 🎓\n\nEvery evening at *7:00 PM* you'll get tomorrow's schedule so you can prepare the night before.\n\n👇 *Select your study group:*`
+      `👋 Hi *${firstName}!* Welcome to *VIKO EIF Timetable Bot* 🎓\n\n` +
+      `📬 Every evening at *7:00 PM* I'll send you *tomorrow's class schedule* so you can prepare the night before.\n\n` +
+      `*How to get started:*\n` +
+      `1️⃣ Select your study group below\n` +
+      `2️⃣ That's it! You'll get automatic notifications every evening\n\n` +
+      `You can always use /today or /tomorrow to check your schedule manually.\n\n` +
+      `👇 *Select your study group:*`,
+      { parse_mode: "Markdown" }
     );
+    await sendGroupPicker(bot, chatId, "👇 Tap your group:");
   });
 
   // ── /setgroup ──────────────────────────────────────────────────────
@@ -365,7 +373,7 @@ function startBot() {
 
     bot.sendMessage(
       chatId,
-      `✅ *Group set to ${groupShort}!*\n\nYou'll receive tomorrow's schedule every evening at *7:00 PM* 📬\n\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/week — This week overview`,
+      `✅ *Group set to ${groupShort}!*\n\nYou'll receive tomorrow's schedule every *evening at 7:00 PM* 📬\n\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/week — This week overview`,
       { parse_mode: "Markdown" }
     );
   });
@@ -381,8 +389,9 @@ function startBot() {
 
     const loading = await bot.sendMessage(chatId, "⏳ Fetching your schedule...");
     try {
-      const lectures = await fetchSchedule(subscriber.groupId, moment());
-      const text = formatScheduleMessage(lectures, moment(), subscriber.groupShort);
+      const today = moment().tz("Europe/Vilnius");
+      const lectures = await fetchSchedule(subscriber.groupId, today);
+      const text = formatScheduleMessage(lectures, today, subscriber.groupShort);
       await bot.deleteMessage(chatId, loading.message_id);
       bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
     } catch (err) {
@@ -401,7 +410,7 @@ function startBot() {
       return bot.sendMessage(chatId, "❗ Please set your group first with /setgroup");
     }
 
-    const tomorrow = moment().add(1, "day");
+    const tomorrow = moment().tz("Europe/Vilnius").add(1, "day");
     const loading = await bot.sendMessage(chatId, "⏳ Fetching tomorrow's schedule...");
     try {
       const lectures = await fetchSchedule(subscriber.groupId, tomorrow);
@@ -428,15 +437,15 @@ function startBot() {
 
     try {
       // Fetch Mon–Fri of current week
-      const monday = moment().startOf("isoWeek");
+      const monday = moment().tz("Europe/Vilnius").startOf("isoWeek");
       const days = [0, 1, 2, 3, 4].map((d) => monday.clone().add(d, "days"));
 
       const results = await Promise.all(
         days.map((d) => fetchSchedule(subscriber.groupId, d))
       );
 
-      const lines = days.map((d, i) => {
-        const lecs = results[i];
+      const lines = days.map((d, idx) => {
+        const lecs = results[idx];
         const dayName = d.format("ddd DD/MM");
         if (lecs.length === 0) return `\n📅 *${dayName}* — No classes ✅`;
         const summary = lecs
@@ -473,7 +482,19 @@ function startBot() {
   bot.onText(/\/help/, (msg) => {
     bot.sendMessage(
       msg.chat.id,
-      `🤖 *VIKO EIF Timetable Bot*\n\nAvailable commands:\n\n/today — Today's class schedule\n/tomorrow — Tomorrow's schedule\n/week — Full week overview\n/setgroup — Change your group\n/stop — Stop daily notifications\n/help — Show this message\n\n📬 Every evening at *7:00 PM* you'll receive tomorrow's schedule so you can prepare the night before.`,
+      `🤖 *VIKO EIF Timetable Bot — Help*\n\n` +
+      `*How to set up:*\n` +
+      `1️⃣ Send /setgroup — tap your group from the list\n` +
+      `2️⃣ Done! You'll receive tomorrow's schedule every evening at *7:00 PM* automatically\n\n` +
+      `*Commands:*\n` +
+      `/today — Today's class schedule\n` +
+      `/tomorrow — Tomorrow's schedule\n` +
+      `/week — Full week overview\n` +
+      `/setgroup — Set or change your group\n` +
+      `/stop — Stop daily notifications\n` +
+      `/help — Show this message\n\n` +
+      `📬 *Automatic notifications:* Every evening at *7:00 PM* you get tomorrow's schedule so you can prepare the night before.\n\n` +
+      `❓ Group not found? Make sure you type the exact group code, e.g. *PI24E*, *EI23A*, *IS24*`,
       { parse_mode: "Markdown" }
     );
   });
@@ -487,11 +508,10 @@ function startBot() {
     await handleGroupInput(bot, chatId, msg.text.trim(), msg.from?.username);
   });
 
-  // ── Daily cron — 7:00 PM Vilnius time (Mon–Fri) ───────────────────
-  // Sends TOMORROW's schedule so students can prepare the night before
-  // Europe/Vilnius is UTC+2 (winter) / UTC+3 (summer)
+  // ── Daily cron — 7:00 PM Vilnius time, every day ─────────────────
+  // Runs daily so Sunday evening sends Monday's schedule too
   cron.schedule(
-    "0 19 * * 1-5",
+    "0 19 * * *",
     async () => {
       console.log(`[${new Date().toISOString()}] Running daily schedule notifications...`);
       const subscribers = await loadSubscribers();
@@ -501,8 +521,8 @@ function startBot() {
         return;
       }
 
-      const tomorrow = moment().add(1, "day");
-      const dateStr = tomorrow.format("YYYY-MM-DD");
+      // Use Vilnius time so "tomorrow" is correct regardless of server timezone
+      const tomorrow = moment().tz("Europe/Vilnius").add(1, "day");
 
       // Group subscribers by groupId to avoid duplicate API calls
       const groupMap = new Map();
@@ -554,7 +574,7 @@ function startBot() {
     { timezone: "Europe/Vilnius" }
   );
 
-  console.log("⏰ Daily cron scheduled: 7:00 PM Vilnius time, Mon–Fri (sends tomorrow's schedule)");
+  console.log("⏰ Daily cron scheduled: 7:00 PM Vilnius time, every day (sends tomorrow's schedule)");
   return bot;
 }
 
@@ -580,7 +600,7 @@ async function handleGroupInput(bot, chatId, input, username) {
 
   bot.sendMessage(
     chatId,
-    `✅ Group set to *${group.short}*!\n\nYou'll now receive tomorrow's schedule every evening at *7:00 PM* 📬\n\nTry it now:\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/week — This week overview`,
+    `✅ Group set to *${group.short}*!\n\nYou'll receive tomorrow's schedule every *evening at 7:00 PM* 📬\n\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/week — This week overview`,
     { parse_mode: "Markdown" }
   );
 }
