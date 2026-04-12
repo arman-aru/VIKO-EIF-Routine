@@ -1,0 +1,66 @@
+# ─── Build ────────────────────────────────────────────────────────────
+[build]
+  base    = "viko_timetable"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# ─── SPA routing — all paths → index.html ─────────────────────────────
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# ─── Security Headers ─────────────────────────────────────────────────
+[[headers]]
+  for = "/*"
+
+  [headers.values]
+    # Prevent site from being embedded in iframes (clickjacking)
+    X-Frame-Options = "DENY"
+
+    # Prevent MIME-type sniffing
+    X-Content-Type-Options = "nosniff"
+
+    # Only send origin in Referer header for cross-origin requests
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+    # Restrict browser features
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"
+
+    # Force HTTPS for 1 year (HSTS)
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+
+    # Content Security Policy
+    # - default-src: only self
+    # - script-src: self + inline (needed by Vite PWA)
+    # - connect-src: self + Koyeb backend + Firebase Realtime DB
+    # - img-src: self + data URIs (for PWA icons)
+    # - style-src: self + inline (Tailwind injects styles)
+    # - frame-src: none (no iframes)
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.koyeb.app https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com; img-src 'self' data:; font-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self';"
+
+# ─── Cache static assets aggressively ─────────────────────────────────
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/icons/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# ─── Never cache HTML (always fresh for PWA updates) ──────────────────
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "no-cache"
+    Content-Type  = "application/manifest+json"
