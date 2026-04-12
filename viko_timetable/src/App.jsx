@@ -43,6 +43,7 @@ const App = () => {
     const cached = localStorage.getItem("groups_list");
     return cached ? JSON.parse(cached) : [];
   });
+  const [groupsLoading, setGroupsLoading] = useState(false);
 
   // Firebase changed lectures
   const [changedLectures, setChangedLectures] = useState([]);
@@ -69,13 +70,14 @@ const App = () => {
   );
 
   // Parse metadata from /all response
+  // Payload order: teachers[0], classes[1], classrooms[2], subjects[3]
   useEffect(() => {
     if (!allInfo) return;
 
-    const allTeachers = allInfo?.r?.tables[0]?.data_rows || [];
-    const allSubjects = allInfo?.r?.tables[1]?.data_rows || [];
+    const allTeachers   = allInfo?.r?.tables[0]?.data_rows || [];
+    const allGroups     = allInfo?.r?.tables[1]?.data_rows || [];
     const allClassrooms = allInfo?.r?.tables[2]?.data_rows || [];
-    const allGroups = allInfo?.r?.tables[3]?.data_rows || [];
+    const allSubjects   = allInfo?.r?.tables[3]?.data_rows || [];
 
     setTeachers(allTeachers);
     setSubjects(allSubjects);
@@ -87,18 +89,22 @@ const App = () => {
     }
   }, [allInfo]);
 
-  // Load groups from static file as fallback
+  // Load groups from bundled static file — instant, no backend needed.
+  // This runs on first visit (no localStorage cache) before the API responds.
   useEffect(() => {
-    if (groups.length === 0) {
-      fetch(`${API_URL}/data/groups.json`)
-        .then((r) => r.json())
-        .then((data) => {
+    if (groups.length > 0) return;
+    setGroupsLoading(true);
+    fetch("/data/groups.json")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.length > 0) {
           setGroups(data);
           localStorage.setItem("groups_list", JSON.stringify(data));
-        })
-        .catch(() => {});
-    }
-  }, [API_URL, groups.length]);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setGroupsLoading(false));
+  }, []);
 
   // Parse timetable items — don't block on subjects being loaded,
   // fall back to "Unknown" labels so cards always appear
@@ -231,6 +237,7 @@ const App = () => {
       {showGroupModal && (
         <GroupModal
           groups={groups}
+          groupsLoading={groupsLoading}
           selectedGroup={selectedGroup}
           onSelect={handleSelectGroup}
           onClose={selectedGroup ? () => setShowGroupModal(false) : null}

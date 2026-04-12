@@ -11,9 +11,9 @@ export const getPayload = (datefrom, dateto, all = false, groupId = "-992") => {
           op: "fetch",
           needed_part: {
             teachers:   ["id", "short", "name", "firstname", "lastname"],
+            classes:    ["id", "short", "name"],
             classrooms: ["id", "short", "name"],
             subjects:   ["id", "short", "name"],
-            igroups:    ["id", "short", "name"],
           },
           needed_combos: {},
         },
