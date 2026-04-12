@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 
-const GroupModal = ({ groups, selectedGroup, onSelect, onClose }) => {
+const GroupModal = ({ groups, groupsLoading, selectedGroup, onSelect, onClose }) => {
   const [search, setSearch] = useState("");
   const inputRef = useRef(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    // Don't auto-focus on mobile — it triggers the keyboard immediately
+    // which pushes the modal offscreen before the user sees the list
+    if (window.innerWidth > 640) {
+      inputRef.current?.focus();
+    }
   }, []);
 
-  // Prevent scroll on body while modal open
   useEffect(() => {
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = ""; };
@@ -22,6 +25,7 @@ const GroupModal = ({ groups, selectedGroup, onSelect, onClose }) => {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+
         {/* Header */}
         <div className="modal-header">
           <div>
@@ -54,6 +58,10 @@ const GroupModal = ({ groups, selectedGroup, onSelect, onClose }) => {
             placeholder="Search group (e.g. PI24E)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="characters"
+            spellCheck="false"
           />
           {search && (
             <button className="search-clear" onClick={() => setSearch("")}>
@@ -66,9 +74,18 @@ const GroupModal = ({ groups, selectedGroup, onSelect, onClose }) => {
 
         {/* Group list */}
         <div className="modal-list">
-          {filtered.length === 0 ? (
+          {groupsLoading ? (
+            <div className="modal-loading">
+              <div className="modal-spinner" />
+              <span>Loading groups...</span>
+            </div>
+          ) : filtered.length === 0 && search ? (
             <div className="modal-empty">
-              <span>No groups found for "{search}"</span>
+              No groups found for &ldquo;{search}&rdquo;
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="modal-empty">
+              No groups available. Check your connection.
             </div>
           ) : (
             filtered.map((group) => {
