@@ -57,20 +57,79 @@ async function removeSubscriber(chatId) {
 }
 
 // ─── Groups helpers ────────────────────────────────────────────────────
+// In-memory cache so we don't hit EduPage API on every /setgroup
+let groupsCache = null;
+let groupsCacheTime = 0;
+const GROUPS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
 async function loadGroups() {
+  // Return cache if fresh
+  if (groupsCache && Date.now() - groupsCacheTime < GROUPS_CACHE_TTL) {
+    return groupsCache;
+  }
+
+  // Try local file first (works in dev and if file exists on server)
   try {
     const raw = await fs.readFile(GROUPS_FILE, "utf-8");
-    return JSON.parse(raw) || [];
+    const data = JSON.parse(raw);
+    if (Array.isArray(data) && data.length > 0) {
+      groupsCache = data;
+      groupsCacheTime = Date.now();
+      return groupsCache;
+    }
   } catch {
+    // file missing or empty — fall through to API
+  }
+
+  // Fetch groups directly from EduPage API
+  try {
+    const today = moment().format("YYYY-MM-DD");
+    const res = await axios.post(
+      MAIN_DB_URL,
+      {
+        __args: [
+          null,
+          2025,
+          { vt_filter: { datefrom: today, dateto: today } },
+          {
+            op: "fetch",
+            needed_part: {
+              classes: ["id", "short", "name"],
+            },
+            needed_combos: {},
+          },
+        ],
+        __gsh: "00000000",
+      },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    const tables = res.data?.r?.tables || [];
+    // Find the classes table (groups have 2+ letter prefix + 2-digit year)
+    const classTable = tables.find((t) =>
+      (t?.data_rows || []).some((r) => /^[A-Z]{2,}\d{2}/.test(r.short || ""))
+    );
+    const groups = classTable?.data_rows || [];
+
+    if (groups.length > 0) {
+      groupsCache = groups;
+      groupsCacheTime = Date.now();
+      // Also save to local file for next time
+      await fs.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2), "utf-8").catch(() => {});
+    }
+    return groups;
+  } catch (err) {
+    console.error("Failed to fetch groups from EduPage:", err.message);
     return [];
   }
 }
 
 async function findGroup(input) {
   const groups = await loadGroups();
-  return groups.find(
-    (g) => g.short?.toUpperCase() === input.trim().toUpperCase()
-  ) || null;
+  const query = input.trim().toUpperCase();
+  return (
+    groups.find((g) => g.short?.toUpperCase() === query) || null
+  );
 }
 
 // ─── Timetable fetching ────────────────────────────────────────────────
@@ -83,11 +142,10 @@ function buildAllPayload(dateFrom, dateTo) {
       {
         op: "fetch",
         needed_part: {
-          teachers: ["short", "name", "firstname", "lastname"],
-          classrooms: ["short", "name"],
-          subjects: ["short", "name"],
-          igroups: ["short", "name"],
-          periods: ["short", "starttime", "endtime"],
+          teachers:   ["id", "short", "name", "firstname", "lastname"],
+          classes:    ["id", "short", "name"],
+          classrooms: ["id", "short", "name"],
+          subjects:   ["id", "short", "name"],
         },
         needed_combos: {},
       },
@@ -129,29 +187,37 @@ async function fetchSchedule(groupId, date) {
   ]);
 
   const tables = allRes.data?.r?.tables || [];
-  const teachers = tables[0]?.data_rows || [];
-  const subjects = tables[1]?.data_rows || [];
-  const classrooms = tables[2]?.data_rows || [];
   const ttitems = currentRes.data?.r?.ttitems || [];
 
-  const subjectMap = new Map(subjects.map((s) => [s.id, s]));
-  const classroomMap = new Map(classrooms.map((c) => [c.id, c]));
-  const teacherMap = new Map(teachers.map((t) => [t.id, t]));
+  // Identify tables by content — API may return them in any order
+  const rows = (t) => t?.data_rows || [];
+
+  const teacherTable   = tables.find((t) => rows(t).some((r) => "firstname" in r));
+  const groupTable     = tables.find((t) => t !== teacherTable && rows(t).some((r) => /^[A-Z]{2,}\d{2}/.test(r.short || "")));
+  const classroomTable = tables.find((t) => t !== teacherTable && t !== groupTable && rows(t).every((r) => !(r.name || "").includes(" ")) && rows(t).some((r) => /^[A-Z]\d+/.test(r.short || "")));
+  const subjectTable   = tables.find((t) => t !== teacherTable && t !== groupTable && t !== classroomTable);
+
+  // Coerce IDs to strings — EduPage mixes number/string types across endpoints
+  const subjectMap   = new Map(rows(subjectTable).map((s)  => [String(s.id), s]));
+  const classroomMap = new Map(rows(classroomTable).map((c) => [String(c.id), c]));
+  const teacherMap   = new Map(rows(teacherTable).map((t)   => [String(t.id), t]));
 
   return ttitems.map((lec) => {
-    const teacher = teacherMap.get(lec.teacherids?.[0]);
+    const sid = String(lec.subjectid ?? "");
+    const cid = String(lec.classroomids?.[0] ?? lec.classroomid ?? "");
+    const tid = String(lec.teacherids?.[0]   ?? lec.teacherid   ?? "");
+    const teacher = teacherMap.get(tid);
     const teacherName =
       [teacher?.firstname, teacher?.lastname].filter(Boolean).join(" ") ||
-      teacher?.short ||
-      "–";
+      teacher?.short || "–";
 
     return {
       period: lec.uniperiod,
       subject:
-        subjectMap.get(lec.subjectid)?.name ||
-        subjectMap.get(lec.subjectid)?.short ||
+        subjectMap.get(sid)?.name ||
+        subjectMap.get(sid)?.short ||
         "Unknown",
-      classroom: classroomMap.get(lec.classroomids?.[0])?.short || "–",
+      classroom: classroomMap.get(cid)?.short || "–",
       teacher: teacherName,
       starttime: lec.starttime,
       endtime: lec.endtime,
@@ -223,8 +289,8 @@ function startBot() {
     conversationState[chatId] = "awaiting_group";
     bot.sendMessage(
       chatId,
-      `👋 Hi *${firstName}!* Welcome to *VIKO EIF Timetable Bot* 🎓\n\nEvery evening at *7:00 PM* I'll send you tomorrow's schedule so you can prepare the night before.\n\n📝 First, tell me your study group.\nType your group name \\(e\\.g\\. *PI24E*\\):`,
-      { parse_mode: "MarkdownV2" }
+      `👋 Hi *${firstName}!* Welcome to *VIKO EIF Timetable Bot* 🎓\n\nEvery evening at *7:00 PM* I'll send you tomorrow's schedule so you can prepare the night before.\n\n📝 First, tell me your study group.\nType your group name (e.g. *PI24E*, *EI23A*):`,
+      { parse_mode: "Markdown" }
     );
   });
 
@@ -237,8 +303,8 @@ function startBot() {
       await handleGroupInput(bot, chatId, inline, msg.from?.username);
     } else {
       conversationState[chatId] = "awaiting_group";
-      bot.sendMessage(chatId, "📝 What is your group? \\(e\\.g\\. *PI24E*\\)", {
-        parse_mode: "MarkdownV2",
+      bot.sendMessage(chatId, "📝 What is your group? (e.g. *PI24E*, *EI23A*)", {
+        parse_mode: "Markdown",
       });
     }
   });
@@ -436,9 +502,14 @@ async function handleGroupInput(bot, chatId, input, username) {
   const group = await findGroup(input);
 
   if (!group) {
+    // Show a few real group examples from the loaded list
+    const allGroups = await loadGroups();
+    const examples = allGroups.slice(0, 5).map((g) => `*${g.short}*`).join(", ");
+    const hint = examples ? `\n\nAvailable examples: ${examples}` : "";
+
     return bot.sendMessage(
       chatId,
-      `❌ Group *${input.toUpperCase()}* not found.\n\nPlease check the group name and try again.\nExample: *PI24E*, *IF23E*`,
+      `❌ Group *${input.toUpperCase()}* not found.\n\nPlease check the group name and try again. Group names look like *PI24E*, *EI23A*, *IS24*.${hint}`,
       { parse_mode: "Markdown" }
     );
   }
@@ -448,7 +519,7 @@ async function handleGroupInput(bot, chatId, input, username) {
 
   bot.sendMessage(
     chatId,
-    `✅ Group set to *${group.short}*!\n\nYou'll now receive your schedule every morning at *7:00 PM* 📬\n\nTry it now:\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/week — This week overview`,
+    `✅ Group set to *${group.short}*!\n\nYou'll now receive tomorrow's schedule every evening at *7:00 PM* 📬\n\nTry it now:\n/today — Today's schedule\n/tomorrow — Tomorrow's schedule\n/week — This week overview`,
     { parse_mode: "Markdown" }
   );
 }
