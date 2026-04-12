@@ -76,40 +76,56 @@ const App = () => {
   );
 
   // Parse metadata from /all response
-  // Identify tables by content — do NOT rely on index order (API may reorder)
-  // Groups: short codes like "PI24E", "EI23A" — short <= 8 chars, alphanumeric
-  // Teachers: have firstname/lastname fields
-  // Classrooms: short codes like "A101", "B203" — short <= 6 chars, no spaces
-  // Subjects: long descriptive names with spaces
   useEffect(() => {
     if (!allInfo) return;
 
     const tables = allInfo?.r?.tables || [];
-    const allRows = (i) => tables[i]?.data_rows || [];
 
-    // Find teachers: rows that have a firstname field
-    const teacherTable = tables.find((t) =>
-      (t?.data_rows || []).some((r) => r.firstname !== undefined)
-    );
-    // Find groups: rows whose short is 2–8 chars, all alphanumeric, no spaces
-    const groupTable = tables.find((t) =>
-      (t?.data_rows || []).some((r) => /^[A-Za-z]{1,4}\d{2}/.test(r.short || ""))
-    );
-    // Find subjects: rows whose name has spaces (long course names)
-    const subjectTable = tables.find((t) =>
-      t !== teacherTable &&
-      t !== groupTable &&
-      (t?.data_rows || []).some((r) => (r.name || "").includes(" "))
-    );
-    // Classrooms: the remaining table
-    const classroomTable = tables.find(
-      (t) => t !== teacherTable && t !== groupTable && t !== subjectTable
-    );
+    // Helper: get rows for a table
+    const rows = (t) => t?.data_rows || [];
 
-    const allTeachers   = teacherTable?.data_rows   || [];
-    const allGroups     = groupTable?.data_rows      || [];
-    const allSubjects   = subjectTable?.data_rows    || [];
-    const allClassrooms = classroomTable?.data_rows  || [];
+    // Strategy 1: EduPage sometimes exposes a table `id` field ("teachers", "classes", etc.)
+    const byId = (name) => tables.find((t) => t?.id === name || t?.type === name);
+
+    let teacherTable   = byId("teachers");
+    let groupTable     = byId("classes");
+    let classroomTable = byId("classrooms");
+    let subjectTable   = byId("subjects");
+
+    // Strategy 2: Content-based detection (fallback when no table id field)
+    if (!teacherTable) {
+      // Teachers are the only rows that have firstname/lastname fields
+      teacherTable = tables.find((t) => rows(t).some((r) => "firstname" in r));
+    }
+    if (!groupTable) {
+      // Groups: short codes with 2+ letter prefix + 2-digit year, e.g. PI24E, EI23A, IS24SN
+      // Must NOT be a classroom code (classrooms: single letter + 3 digits, e.g. A101)
+      groupTable = tables.find((t) =>
+        t !== teacherTable &&
+        rows(t).some((r) => /^[A-Z]{2,}\d{2}/.test(r.short || ""))
+      );
+    }
+    if (!classroomTable) {
+      // Classrooms: single-letter prefix + digits (A101, B203) OR pure alphanumeric short codes
+      // that are NOT group codes and NOT long names
+      classroomTable = tables.find((t) =>
+        t !== teacherTable &&
+        t !== groupTable &&
+        rows(t).every((r) => !(r.name || "").includes(" ")) &&
+        rows(t).some((r) => /^[A-Z]\d+/.test(r.short || ""))
+      );
+    }
+    if (!subjectTable) {
+      // Subjects: the only remaining table (has long names with spaces)
+      subjectTable = tables.find(
+        (t) => t !== teacherTable && t !== groupTable && t !== classroomTable
+      );
+    }
+
+    const allTeachers   = rows(teacherTable);
+    const allGroups     = rows(groupTable);
+    const allClassrooms = rows(classroomTable);
+    const allSubjects   = rows(subjectTable);
 
     setTeachers(allTeachers);
     setSubjects(allSubjects);
@@ -143,26 +159,39 @@ const App = () => {
   const lectures = useMemo(() => {
     if (!currentData?.r?.ttitems) return null;
 
-    const subjectMap = new Map(subjects.map((s) => [s.id, s]));
-    const classroomMap = new Map(classrooms.map((c) => [c.id, c]));
-    const teacherMap = new Map(teachers.map((t) => [t.id, t]));
+    // DEBUG: log first timetable item to verify field names (remove after confirming)
+    if (currentData.r.ttitems.length > 0) {
+      console.log("[DEBUG] ttitem sample:", currentData.r.ttitems[0]);
+      console.log("[DEBUG] teachers count:", teachers.length, "classrooms count:", classrooms.length);
+    }
 
-    return currentData.r.ttitems.map((lec) => ({
+    // Coerce all IDs to strings — EduPage mixes number/string IDs across endpoints
+    const subjectMap   = new Map(subjects.map((s)   => [String(s.id), s]));
+    const classroomMap = new Map(classrooms.map((c)  => [String(c.id), c]));
+    const teacherMap   = new Map(teachers.map((t)    => [String(t.id), t]));
+
+    return currentData.r.ttitems.map((lec) => {
+      const sid = String(lec.subjectid ?? lec.subjectids?.[0] ?? "");
+      // EduPage uses both plural (classroomids) and singular (classroomid) field names
+      const cid = String(
+        lec.classroomids?.[0] ?? lec.classroomid ?? ""
+      );
+      const tid = String(
+        lec.teacherids?.[0] ?? lec.teacherid ?? ""
+      );
+      const teacher = teacherMap.get(tid);
+      return ({
       subject:
-        subjectMap.get(lec.subjectid)?.name ||
-        subjectMap.get(lec.subjectid)?.short ||
+        subjectMap.get(sid)?.name ||
+        subjectMap.get(sid)?.short ||
         lec.subjectid ||
         "Unknown",
-      subjectShort: subjectMap.get(lec.subjectid)?.short || "?",
-      classroom: classroomMap.get(lec.classroomids?.[0])?.short || "–",
-      teacher: teacherMap.get(lec.teacherids?.[0])?.short || "–",
+      subjectShort: subjectMap.get(sid)?.short || "?",
+      classroom: classroomMap.get(cid)?.short || "–",
+      teacher: teacher?.short || "–",
       teacherFull:
-        [
-          teacherMap.get(lec.teacherids?.[0])?.firstname,
-          teacherMap.get(lec.teacherids?.[0])?.lastname,
-        ]
-          .filter(Boolean)
-          .join(" ") || teacherMap.get(lec.teacherids?.[0])?.short || "–",
+        [teacher?.firstname, teacher?.lastname].filter(Boolean).join(" ") ||
+        teacher?.short || "–",
       date: lec.date,
       starttime: lec.starttime,
       endtime: lec.endtime,
@@ -170,7 +199,7 @@ const App = () => {
       color: lec.colors?.[0] || "#6366f1",
       changed: lec.changed || false,
       subgroup: lec.groupnames?.[0] || null,
-    }));
+    });});
   }, [currentData, subjects, classrooms, teachers]);
 
   // Check if a lecture has a room/teacher change from Firebase
