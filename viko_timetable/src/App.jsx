@@ -25,6 +25,38 @@ const App = () => {
     return d ? moment(d).format("YYYY-MM-DD") : moment().format("YYYY-MM-DD");
   });
 
+  // Auto-reset to today when:
+  // 1. App comes back from background (user reopens PWA)
+  // 2. Midnight passes while app is open
+  useEffect(() => {
+    const today = () => moment().format("YYYY-MM-DD");
+
+    // When tab/app becomes visible again, check if day changed
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        setDate((prev) => (prev !== today() ? today() : prev));
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    // Schedule a timer to fire exactly at the next midnight
+    const scheduleAtMidnight = () => {
+      const now = moment();
+      const msUntilMidnight =
+        moment().endOf("day").add(1, "ms").diff(now);
+      return setTimeout(() => {
+        setDate(today());
+        scheduleAtMidnight(); // reschedule for the next midnight
+      }, msUntilMidnight);
+    };
+    const timer = scheduleAtMidnight();
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearTimeout(timer);
+    };
+  }, []);
+
   // Group state — from localStorage or null (triggers modal)
   const [selectedGroup, setSelectedGroup] = useState(() => {
     const saved = localStorage.getItem("selected_group");
