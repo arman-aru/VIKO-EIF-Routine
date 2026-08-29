@@ -6,13 +6,19 @@ const MIN_GAP_MINUTES = 15;
 
 const at = (date, time) => moment(`${date} ${time}`, "YYYY-MM-DD HH:mm");
 
-/** Human duration: 45 min, 1 h, 1 h 45 */
+/** Human duration: 45 min, 1 h, 1 h 45, 5 h 05 */
 export const formatDuration = (minutes) => {
   if (minutes < 60) return `${minutes} min`;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  return m ? `${h} h ${m}` : `${h} h`;
+  return m ? `${h} h ${String(m).padStart(2, "0")}` : `${h} h`;
 };
+
+/**
+ * A countdown only earns its place when the lesson is actually near — the
+ * start time is already on the row, so "in 5 h 05" adds noise, not meaning.
+ */
+export const COUNTDOWN_WINDOW_MINUTES = 180;
 
 /**
  * Annotates a day's lectures with their position in time, and inserts the

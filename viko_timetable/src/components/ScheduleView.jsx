@@ -1,55 +1,40 @@
 import moment from "moment";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useNow } from "../hooks/useNow";
+import { buildTimeline, formatDuration, getNowPlacement } from "../utils/schedule";
 import LectureCard from "./LectureCard";
+import {
+  FreeDayIcon,
+  RefreshIcon,
+  SelectGroupIcon,
+  WeekendIcon,
+} from "./icons";
 
-const SkeletonCard = () => (
-  <div className="skeleton-card">
-    <div className="skeleton-left">
-      <div className="skeleton-box skeleton-period" />
+const SkeletonRow = () => (
+  <div className="lesson lesson--skeleton" aria-hidden="true">
+    <div className="lesson__times">
+      <span className="shimmer shimmer--time" />
+      <span className="shimmer shimmer--time" />
     </div>
-    <div className="skeleton-time-col">
-      <div className="skeleton-box skeleton-time" />
-      <div className="skeleton-box skeleton-time" />
+    <div className="lesson__rail">
+      <span className="lesson__node lesson__node--empty" />
+      <span className="lesson__thread" />
     </div>
-    <div className="skeleton-body">
-      <div className="skeleton-box skeleton-title" />
-      <div className="skeleton-box skeleton-meta" />
+    <div className="lesson__body">
+      <span className="shimmer shimmer--title" />
+      <span className="shimmer shimmer--meta" />
     </div>
   </div>
 );
 
-const EmptyState = ({ isWeekend, onSelectGroup, noGroup }) => {
-  if (noGroup) {
-    return (
-      <div className="empty-state">
-        <div className="empty-icon">🎓</div>
-        <h3 className="empty-title">Welcome to VIKO EIF Timetable</h3>
-        <p className="empty-desc">Select your study group to view your schedule</p>
-        <button className="btn-primary" onClick={onSelectGroup}>
-          Choose My Group
-        </button>
-      </div>
-    );
-  }
-
-  if (isWeekend) {
-    return (
-      <div className="empty-state">
-        <div className="empty-icon">🌿</div>
-        <h3 className="empty-title">Weekend!</h3>
-        <p className="empty-desc">No classes today. Time to rest and recharge.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="empty-state">
-      <div className="empty-icon">✨</div>
-      <h3 className="empty-title">No classes today</h3>
-      <p className="empty-desc">Enjoy your free day!</p>
-    </div>
-  );
-};
+const EmptyState = ({ icon: Glyph, title, body, action }) => (
+  <div className="empty">
+    <Glyph size={40} className="empty__icon" />
+    <h3 className="empty__title">{title}</h3>
+    <p className="empty__body">{body}</p>
+    {action}
+  </div>
+);
 
 const RefreshButton = ({ onRefresh, isLoading }) => {
   const [spinning, setSpinning] = useState(false);
@@ -58,24 +43,37 @@ const RefreshButton = ({ onRefresh, isLoading }) => {
     if (spinning || isLoading) return;
     setSpinning(true);
     onRefresh();
-    setTimeout(() => setSpinning(false), 1000);
+    setTimeout(() => setSpinning(false), 900);
   };
 
   return (
     <button
-      className={`refresh-btn ${spinning || isLoading ? "refresh-btn--spinning" : ""}`}
+      className={`icon-btn ${spinning || isLoading ? "is-spinning" : ""}`}
       onClick={handleClick}
-      title="Refresh schedule"
       aria-label="Refresh schedule"
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-        <polyline points="23 4 23 10 17 10" />
-        <polyline points="1 20 1 14 7 14" />
-        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-      </svg>
+      <RefreshIcon size={17} />
     </button>
   );
 };
+
+/** The live marker, shown when the clock isn't inside a lesson. */
+const NowMarker = ({ now }) => (
+  <div className="now-marker">
+    <span className="now-marker__dot" />
+    <span className="now-marker__rule" />
+    <span className="now-marker__time">{now.format("HH:mm")}</span>
+  </div>
+);
+
+const BreakRow = ({ minutes, isNow }) => (
+  <div className={`break ${isNow ? "break--now" : ""}`}>
+    <span className="break__thread" aria-hidden="true" />
+    <span className="break__label">
+      {formatDuration(minutes)} break{isNow ? " · now" : ""}
+    </span>
+  </div>
+);
 
 const ScheduleView = ({
   date,
@@ -86,71 +84,97 @@ const ScheduleView = ({
   onSelectGroup,
   onRefresh,
 }) => {
-  const dayMoment = moment(date, "YYYY-MM-DD");
-  const isToday = dayMoment.isSame(moment(), "day");
-  const isTomorrow = dayMoment.isSame(moment().add(1, "day"), "day");
-  const isYesterday = dayMoment.isSame(moment().subtract(1, "day"), "day");
-  const isWeekend = dayMoment.day() === 0 || dayMoment.day() === 6;
+  const now = useNow();
+  const day = moment(date, "YYYY-MM-DD");
+  const isToday = day.isSame(now, "day");
+  const isWeekend = day.day() === 0 || day.day() === 6;
 
-  const dayLabel = isToday
+  const relative = isToday
     ? "Today"
-    : isTomorrow
+    : day.isSame(moment(now).add(1, "day"), "day")
     ? "Tomorrow"
-    : isYesterday
+    : day.isSame(moment(now).subtract(1, "day"), "day")
     ? "Yesterday"
     : null;
 
-  const noGroup = !selectedGroup;
+  const rows = useMemo(
+    () => buildTimeline(lectures, date, now),
+    [lectures, date, now]
+  );
+  const nowPlacement = getNowPlacement(rows, date, now);
+
+  const count = lectures?.length ?? 0;
+  const hasGroup = !!selectedGroup;
+  const showCount = hasGroup && lectures && !isLoading;
 
   return (
-    <div className="schedule-view">
-      {/* Date heading */}
-      <div className="schedule-date-header">
-        <div className="schedule-date-main">
-          {dayLabel && <span className="day-label">{dayLabel}</span>}
-          <h2 className="schedule-date-text">{dayMoment.format("dddd")}</h2>
-          <span className="schedule-date-full">
-            {dayMoment.format("MMMM D, YYYY")}
-          </span>
+    <section className="day">
+      <header className="day__head">
+        <div className="day__title-block">
+          {relative && <span className="day__relative">{relative}</span>}
+          <h2 className="day__name">{day.format("dddd")}</h2>
+          <p className="day__date">{day.format("D MMMM YYYY")}</p>
         </div>
 
-        <div className="schedule-header-right">
-          {!noGroup && lectures && !isLoading && (
-            <div className="lecture-count-badge">
-              {lectures.length > 0
-                ? `${lectures.length} class${lectures.length !== 1 ? "es" : ""}`
-                : "Free day"}
-            </div>
+        <div className="day__actions">
+          {showCount && (
+            <span className="day__count">
+              {count > 0 ? `${count} ${count === 1 ? "class" : "classes"}` : "Free"}
+            </span>
           )}
-          {!noGroup && (
-            <RefreshButton onRefresh={onRefresh} isLoading={isLoading} />
-          )}
+          {hasGroup && <RefreshButton onRefresh={onRefresh} isLoading={isLoading} />}
         </div>
-      </div>
+      </header>
 
-      {/* Content */}
-      <div className="schedule-list">
-        {noGroup ? (
-          <EmptyState noGroup onSelectGroup={onSelectGroup} />
+      <div className="day__body">
+        {!hasGroup ? (
+          <EmptyState
+            icon={SelectGroupIcon}
+            title="Pick your group"
+            body="Choose your study group and your week appears here."
+            action={
+              <button className="btn btn--primary" onClick={onSelectGroup}>
+                Choose group
+              </button>
+            }
+          />
         ) : isLoading ? (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
-        ) : lectures && lectures.length > 0 ? (
-          lectures.map((lecture, i) => (
-            <LectureCard
-              key={i}
-              lecture={lecture}
-              change={getLectureChange(lecture)}
-            />
-          ))
+          <div className="rail">
+            <SkeletonRow />
+            <SkeletonRow />
+            <SkeletonRow />
+          </div>
+        ) : count > 0 ? (
+          <div className="rail" key={date}>
+            {nowPlacement === "before" && <NowMarker now={now} />}
+            {rows.map((row, i) =>
+              row.kind === "break" ? (
+                <BreakRow key={`b${i}`} minutes={row.minutes} isNow={row.isNow} />
+              ) : (
+                <LectureCard
+                  key={`${row.lecture.periodno}-${row.lecture.starttime}`}
+                  row={row}
+                  change={getLectureChange(row.lecture)}
+                />
+              )
+            )}
+            {nowPlacement === "after" && <NowMarker now={now} />}
+          </div>
+        ) : isWeekend ? (
+          <EmptyState
+            icon={WeekendIcon}
+            title="Weekend"
+            body="Nothing scheduled. The week picks up on Monday."
+          />
         ) : (
-          <EmptyState isWeekend={isWeekend} />
+          <EmptyState
+            icon={FreeDayIcon}
+            title="No classes"
+            body={`Nothing scheduled for ${day.format("dddd")}.`}
+          />
         )}
       </div>
-    </div>
+    </section>
   );
 };
 

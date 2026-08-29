@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CloseIcon } from "./icons";
 
 const InstallPrompt = () => {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -51,28 +52,28 @@ const InstallPrompt = () => {
   if (!showBanner || dismissed) return null;
 
   return (
-    <div className="install-banner">
-      <div className="install-banner-icon">
-        <img src="/icons/icon-192x192.png" alt="App icon" />
-      </div>
-      <div className="install-banner-text">
+    <div className="install">
+      <img src="/icons/icon-192x192.png" alt="" className="install__icon" />
+      <div className="install__text">
         <strong>Install VIKO EIF</strong>
-        {isIOS ? (
-          <span>Tap <b>Share</b> → <b>Add to Home Screen</b></span>
-        ) : (
-          <span>Add to home screen for quick access</span>
-        )}
+        <span>
+          {isIOS ? (
+            <>
+              Tap <b>Share</b>, then <b>Add to Home Screen</b>
+            </>
+          ) : (
+            "Keep your timetable one tap away"
+          )}
+        </span>
       </div>
-      <div className="install-banner-actions">
+      <div className="install__actions">
         {!isIOS && (
-          <button className="install-btn" onClick={handleInstall}>
+          <button className="btn btn--primary btn--sm" onClick={handleInstall}>
             Install
           </button>
         )}
-        <button className="install-dismiss" onClick={handleDismiss} aria-label="Dismiss">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
+        <button className="icon-btn" onClick={handleDismiss} aria-label="Dismiss">
+          <CloseIcon size={16} />
         </button>
       </div>
     </div>

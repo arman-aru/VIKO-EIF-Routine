@@ -1,118 +1,149 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckIcon, CloseIcon, SearchIcon } from "./icons";
+
+const DESKTOP_WIDTH = 640;
+
+/** PI25E → PI. Groups the list by programme so 25 codes stay scannable. */
+const programmeOf = (group) => (group.short || "").match(/^[A-Z]+/)?.[0] || "Other";
 
 const GroupModal = ({ groups, groupsLoading, selectedGroup, onSelect, onClose }) => {
   const [search, setSearch] = useState("");
   const inputRef = useRef(null);
+  const panelRef = useRef(null);
 
   useEffect(() => {
-    // Don't auto-focus on mobile — it triggers the keyboard immediately
-    // which pushes the modal offscreen before the user sees the list
-    if (window.innerWidth > 640) {
-      inputRef.current?.focus();
-    }
+    // Autofocus would open the keyboard on mobile and bury the list
+    if (window.innerWidth > DESKTOP_WIDTH) inputRef.current?.focus();
   }, []);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = ""; };
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, []);
 
-  const filtered = groups.filter((g) =>
-    g.short?.toLowerCase().includes(search.toLowerCase()) ||
-    g.name?.toLowerCase().includes(search.toLowerCase())
-  );
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const sections = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const matches = groups.filter(
+      (g) =>
+        g.short?.toLowerCase().includes(q) || g.name?.toLowerCase().includes(q)
+    );
+    const grouped = matches.reduce((acc, g) => {
+      const key = programmeOf(g);
+      (acc[key] ||= []).push(g);
+      return acc;
+    }, {});
+    return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+  }, [groups, search]);
+
+  const total = sections.reduce((n, [, list]) => n + list.length, 0);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="sheet-overlay" onClick={onClose}>
+      <div
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sheet-title"
+        ref={panelRef}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sheet__grip" aria-hidden="true" />
 
-        {/* Header */}
-        <div className="modal-header">
+        <div className="sheet__head">
           <div>
-            <h2 className="modal-title">Select Your Group</h2>
-            <p className="modal-subtitle">
+            <h2 className="sheet__title" id="sheet-title">
+              Your group
+            </h2>
+            <p className="sheet__sub">
               {selectedGroup
-                ? "Currently: " + selectedGroup.short
-                : "Choose your study group to see your timetable"}
+                ? `Showing ${selectedGroup.short}`
+                : "Pick a group to load its timetable"}
             </p>
           </div>
           {onClose && (
-            <button className="modal-close-btn" onClick={onClose} aria-label="Close">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
+            <button className="icon-btn" onClick={onClose} aria-label="Close">
+              <CloseIcon size={18} />
             </button>
           )}
         </div>
 
-        {/* Search */}
-        <div className="modal-search-wrap">
-          <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.35-4.35" />
-          </svg>
+        <div className="field">
+          <SearchIcon size={16} className="field__icon" />
           <input
             ref={inputRef}
-            className="modal-search"
+            className="field__input"
             type="text"
-            placeholder="Search group (e.g. PI24E)"
+            placeholder="Search groups"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="characters"
             spellCheck="false"
+            aria-label="Search groups"
           />
           {search && (
-            <button className="search-clear" onClick={() => setSearch("")}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
+            <button
+              className="field__clear"
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+            >
+              <CloseIcon size={14} />
             </button>
           )}
         </div>
 
-        {/* Group list */}
-        <div className="modal-list">
-          {groupsLoading ? (
-            <div className="modal-loading">
-              <div className="modal-spinner" />
-              <span>Loading groups...</span>
+        <div className="sheet__list">
+          {groupsLoading && total === 0 ? (
+            <div className="sheet__status">
+              <span className="spinner" />
+              Loading groups
             </div>
-          ) : filtered.length === 0 && search ? (
-            <div className="modal-empty">
-              No groups found for &ldquo;{search}&rdquo;
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="modal-empty">
-              No groups available. Check your connection.
+          ) : total === 0 ? (
+            <div className="sheet__status">
+              {search
+                ? `No group matches “${search}”`
+                : "No groups available. Check your connection."}
             </div>
           ) : (
-            filtered.map((group) => {
-              const isActive = selectedGroup?.id === group.id;
-              return (
-                <button
-                  key={group.id}
-                  className={`group-item ${isActive ? "group-item--active" : ""}`}
-                  onClick={() => onSelect(group)}
-                >
-                  <span className="group-badge">{group.short}</span>
-                  <span className="group-name">{group.name || group.short}</span>
-                  {isActive && (
-                    <svg className="group-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                </button>
-              );
-            })
+            sections.map(([programme, list]) => (
+              <section key={programme} className="sheet__section">
+                <h3 className="sheet__section-title">{programme}</h3>
+                <div className="sheet__grid">
+                  {list.map((group) => {
+                    const isActive = selectedGroup?.short === group.short;
+                    return (
+                      <button
+                        key={group.id}
+                        className={`group-option ${
+                          isActive ? "group-option--active" : ""
+                        }`}
+                        onClick={() => onSelect(group)}
+                      >
+                        <span className="group-option__code">{group.short}</span>
+                        {isActive && <CheckIcon size={15} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ))
           )}
         </div>
 
         {!onClose && (
-          <p className="modal-footer-note">
-            You can change your group anytime from the header
-          </p>
+          <p className="sheet__note">You can change this later from the header.</p>
         )}
       </div>
     </div>
