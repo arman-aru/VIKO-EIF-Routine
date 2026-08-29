@@ -1,40 +1,33 @@
 import moment from "moment";
+import { ChevronLeft, ChevronRight } from "./icons";
 
 const BottomNav = ({ date, onPrev, onNext, onToday }) => {
-  const isToday = moment(date).isSame(moment(), "day");
+  const isToday = moment(date, "YYYY-MM-DD").isSame(moment(), "day");
   // Always the real current date — this button is a shortcut *to* today, so
   // labelling it with the viewed day made it read as the wrong date.
-  const displayDate = moment().format("D MMM");
+  const todayLabel = moment().format("D MMM");
 
   return (
-    <nav className="bottom-nav">
-
-      {/* Previous */}
-      <button className="bnav-arrow" onClick={onPrev} aria-label="Previous day">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="15 18 9 12 15 6" />
-        </svg>
+    <nav className="daynav" aria-label="Change day">
+      <button type="button" className="daynav__step" onClick={onPrev}>
+        <ChevronLeft size={18} />
         <span>Prev</span>
       </button>
 
-      {/* Today — centre pill */}
       <button
-        className={`bnav-today ${isToday ? "bnav-today--active" : ""}`}
+        type="button"
+        className={`daynav__today ${isToday ? "daynav__today--active" : ""}`}
         onClick={onToday}
-        aria-label="Go to today"
+        aria-label={`Go to today, ${moment().format("D MMMM")}`}
       >
-        <span className="bnav-today-label">Today</span>
-        <span className="bnav-today-date">{displayDate}</span>
+        <span className="daynav__today-label">Today</span>
+        <span className="daynav__today-date">{todayLabel}</span>
       </button>
 
-      {/* Next */}
-      <button className="bnav-arrow" onClick={onNext} aria-label="Next day">
+      <button type="button" className="daynav__step" onClick={onNext}>
         <span>Next</span>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
+        <ChevronRight size={18} />
       </button>
-
     </nav>
   );
 };

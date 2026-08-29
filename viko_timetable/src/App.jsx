@@ -90,7 +90,11 @@ const App = () => {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [showGroupModal, setShowGroupModal] = useState(!localStorage.getItem("selected_group"));
+  // A shared ?group= link resolves on its own once the group list lands, so
+  // don't open the picker over it.
+  const [showGroupModal, setShowGroupModal] = useState(
+    () => !localStorage.getItem("selected_group") && !searchParams.get("group")
+  );
 
   // Refresh key — increment to force re-fetch
   const [refreshKey, setRefreshKey] = useState(0);
@@ -379,18 +383,21 @@ const App = () => {
 
   return (
     <div className="app-root">
-      <Header
-        selectedGroup={selectedGroup}
-        onChangeGroup={() => setShowGroupModal(true)}
-      />
-
-      <main className="main-content">
+      {/* Brand row and week strip share one full-bleed sticky bar, so there
+          is a single backdrop rather than two overlapping panels. */}
+      <div className="appbar">
+        <Header
+          selectedGroup={selectedGroup}
+          onChangeGroup={() => setShowGroupModal(true)}
+        />
         <WeekStrip
           currentDate={date}
           onSelectDate={setDate}
           weekCounts={weekCounts}
         />
+      </div>
 
+      <main className="main-content">
         <ScheduleView
           date={date}
           lectures={lectures}
