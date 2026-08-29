@@ -10,6 +10,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
+      // Registration lives in src/pwa.js so the app can check for new builds
+      // on resume, not only on a cold page load.
+      injectRegister: null,
       includeAssets: ["favicon.ico", "icons/*.png"],
       manifest: {
         name: "VIKO EIF Timetable",
