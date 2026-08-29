@@ -1186,7 +1186,9 @@ button {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   margin: 0 -4px;
-  padding: 0 4px;
+  /* Trailing space so the last row doesn't sit flush against the sheet
+     edge when scrolled to the end */
+  padding: 0 4px 15px;
 }
 
 .sheet__section + .sheet__section {
