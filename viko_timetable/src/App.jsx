@@ -1,5 +1,5 @@
 import moment from "moment";
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Route, Routes, useSearchParams } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -7,6 +7,7 @@ import { AppContext } from "./context/AppContext";
 import { db, limitToLast, onValue, orderByChild, query, ref } from "./firebaseConfig";
 import { getPayload } from "./payloads";
 import useFetch from "./useFetch";
+import { getAcademicYear } from "./utils/academicYear";
 
 import BottomNav from "./components/BottomNav";
 import InstallPrompt from "./components/InstallPrompt";
@@ -15,44 +16,70 @@ import Header from "./components/Header";
 import ScheduleView from "./components/ScheduleView";
 import WeekStrip from "./components/WeekStrip";
 
+const today = () => moment().format("YYYY-MM-DD");
+
 const App = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { API_URL } = useContext(AppContext);
 
-  // Date state — from URL or today
+  // Date state — a shared link may deep-link to a specific day, otherwise today
   const [date, setDate] = useState(() => {
-    const d = searchParams.get("date");
-    return d ? moment(d).format("YYYY-MM-DD") : moment().format("YYYY-MM-DD");
+    const shared = searchParams.get("date");
+    return shared && moment(shared, "YYYY-MM-DD", true).isValid()
+      ? shared
+      : today();
   });
 
-  // Auto-reset to today when:
-  // 1. App comes back from background (user reopens PWA)
-  // 2. Midnight passes while app is open
+  // Drop the deep-linked date from the URL once consumed, so a later reload or
+  // PWA relaunch of this same URL opens on today instead of a stale day.
   useEffect(() => {
-    const today = () => moment().format("YYYY-MM-DD");
+    if (!searchParams.get("date")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("date");
+    setSearchParams(next, { replace: true });
+  }, []);
 
-    // When tab/app becomes visible again, check if day changed
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        setDate((prev) => (prev !== today() ? today() : prev));
-      }
+  // The calendar day the app last saw. Used to snap back to today when the day
+  // has actually rolled over — leaving same-day browsing undisturbed.
+  const lastSeenDay = useRef(today());
+
+  // Auto-reset to today when:
+  // 1. The app is reopened/refocused on a later calendar day
+  // 2. Midnight passes while the app is open
+  useEffect(() => {
+    const syncToToday = () => {
+      const now = today();
+      if (now === lastSeenDay.current) return;
+      lastSeenDay.current = now;
+      setDate(now);
     };
-    document.addEventListener("visibilitychange", onVisible);
 
-    // Schedule a timer to fire exactly at the next midnight
+    const onVisible = () => {
+      if (document.visibilityState === "visible") syncToToday();
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    // focus covers desktop tab switching; pageshow covers bfcache restores,
+    // which is how mobile PWAs usually come back to the foreground
+    window.addEventListener("focus", syncToToday);
+    window.addEventListener("pageshow", syncToToday);
+
+    // Fire exactly at the next midnight, then reschedule
+    let timer;
     const scheduleAtMidnight = () => {
-      const now = moment();
-      const msUntilMidnight =
-        moment().endOf("day").add(1, "ms").diff(now);
-      return setTimeout(() => {
-        setDate(today());
-        scheduleAtMidnight(); // reschedule for the next midnight
+      const msUntilMidnight = moment().endOf("day").add(1, "ms").diff(moment());
+      timer = setTimeout(() => {
+        lastSeenDay.current = today();
+        setDate(lastSeenDay.current);
+        scheduleAtMidnight();
       }, msUntilMidnight);
     };
-    const timer = scheduleAtMidnight();
+    scheduleAtMidnight();
 
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", syncToToday);
+      window.removeEventListener("pageshow", syncToToday);
       clearTimeout(timer);
     };
   }, []);
@@ -72,20 +99,19 @@ const App = () => {
   const [teachers, setTeachers] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [classrooms, setClassrooms] = useState([]);
-  const [groups, setGroups] = useState(() => {
-    // v2: invalidate old cache that may have contained subjects instead of groups
-    const version = localStorage.getItem("groups_list_v");
-    if (version !== "2") {
-      localStorage.removeItem("groups_list");
-      localStorage.setItem("groups_list_v", "2");
-    }
-    const cached = localStorage.getItem("groups_list");
-    return cached ? JSON.parse(cached) : [];
-  });
+  // Bootstrap list for the group picker only — its ids are NOT trustworthy,
+  // because EduPage re-assigns group ids every academic year.
+  const [fallbackGroups, setFallbackGroups] = useState([]);
+  // Authoritative, year-scoped groups from /all. Ids here are safe to use.
+  const [yearGroups, setYearGroups] = useState([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
 
   // Firebase changed lectures
   const [changedLectures, setChangedLectures] = useState([]);
+
+  // Every EduPage dataset is scoped to an academic year, derived from the date
+  const academicYear = useMemo(() => getAcademicYear(date), [date]);
+  const groupsCacheKey = `groups_list_${academicYear}`;
 
   // Fetch metadata (week range for the currently viewed date)
   const weekStart = moment(date).startOf("isoWeek").format("YYYY-MM-DD");
@@ -93,18 +119,29 @@ const App = () => {
 
   const { data: allInfo } = useFetch(
     `${API_URL}/all`,
-    getPayload(weekStart, weekEnd, true),
-    date,
+    getPayload(weekStart, weekEnd, true, undefined, academicYear),
+    `${weekStart}:${academicYear}`,
     undefined,
     refreshKey
   );
 
-  // Fetch current day timetable for selected group
+  // Group ids differ per academic year, so always resolve the saved group by
+  // its short code against this year's list rather than trusting a cached id.
+  const resolvedGroupId = useMemo(() => {
+    if (!selectedGroup) return null;
+    return (
+      yearGroups.find((g) => g.short === selectedGroup.short)?.id || null
+    );
+  }, [yearGroups, selectedGroup]);
+
+  // Fetch the whole ISO week in one request, then slice it by day locally.
+  // Switching days becomes instant, and it gives the week strip real per-day
+  // class counts instead of a blind row of numbers.
   const { data: currentData, loading: currentLoading } = useFetch(
-    `${API_URL}/current`,
-    getPayload(date, date, false, selectedGroup?.id || "-910"),
-    date,
-    selectedGroup?.id,
+    resolvedGroupId ? `${API_URL}/current` : null,
+    getPayload(weekStart, weekEnd, false, resolvedGroupId, academicYear),
+    `${weekStart}:${academicYear}`,
+    resolvedGroupId,
     refreshKey
   );
 
@@ -165,75 +202,111 @@ const App = () => {
     setClassrooms(allClassrooms);
 
     if (allGroups.length > 0) {
-      setGroups(allGroups);
-      localStorage.setItem("groups_list", JSON.stringify(allGroups));
+      setYearGroups(allGroups);
+      localStorage.setItem(groupsCacheKey, JSON.stringify(allGroups));
     }
-  }, [allInfo]);
+  }, [allInfo, groupsCacheKey]);
+
+  // Seed this year's groups from cache while /all is in flight
+  useEffect(() => {
+    const cached = localStorage.getItem(groupsCacheKey);
+    setYearGroups(cached ? JSON.parse(cached) : []);
+  }, [groupsCacheKey]);
 
   // Load groups from bundled static file — instant, no backend needed.
-  // This runs on first visit (no localStorage cache) before the API responds.
+  // Picker bootstrap only: these ids belong to an older year and are discarded
+  // as soon as the year-scoped list arrives.
   useEffect(() => {
-    if (groups.length > 0) return;
     setGroupsLoading(true);
     fetch("/data/groups.json")
       .then((r) => r.json())
       .then((data) => {
-        if (data?.length > 0) {
-          setGroups(data);
-          localStorage.setItem("groups_list", JSON.stringify(data));
-        }
+        if (data?.length > 0) setFallbackGroups(data);
       })
       .catch(() => {})
       .finally(() => setGroupsLoading(false));
   }, []);
 
-  // Parse timetable items — don't block on subjects being loaded,
-  // fall back to "Unknown" labels so cards always appear
-  const lectures = useMemo(() => {
+  // What the picker shows: this year's real groups, else the bootstrap list
+  const groups = yearGroups.length > 0 ? yearGroups : fallbackGroups;
+
+  // Parse the whole week's timetable items into lectures keyed by date.
+  // Labels fall back to placeholders rather than blocking on metadata, so
+  // cards always render.
+  const weekLectures = useMemo(() => {
     if (!currentData?.r?.ttitems) return null;
 
-    // DEBUG: log first timetable item to verify field names (remove after confirming)
-    if (currentData.r.ttitems.length > 0) {
-      console.log("[DEBUG] ttitem sample:", currentData.r.ttitems[0]);
-      console.log("[DEBUG] teachers count:", teachers.length, "classrooms count:", classrooms.length);
-    }
+    // EduPage mixes real lessons ("card") with non-lesson markers such as
+    // whole-day "out" placeholders — keep only actual lessons.
+    const cards = currentData.r.ttitems.filter((lec) => lec.type === "card");
 
     // Coerce all IDs to strings — EduPage mixes number/string IDs across endpoints
     const subjectMap   = new Map(subjects.map((s)   => [String(s.id), s]));
     const classroomMap = new Map(classrooms.map((c)  => [String(c.id), c]));
     const teacherMap   = new Map(teachers.map((t)    => [String(t.id), t]));
 
-    return currentData.r.ttitems.map((lec) => {
+    // A lesson can span several rooms and several lecturers ("104, 104A") —
+    // show all of them, not just the first.
+    const namesFor = (ids, map, key) =>
+      (ids || [])
+        .map((id) => map.get(String(id))?.[key])
+        .filter(Boolean)
+        .join(", ");
+
+    const byDate = {};
+
+    cards.forEach((lec) => {
       const sid = String(lec.subjectid ?? lec.subjectids?.[0] ?? "");
-      // EduPage uses both plural (classroomids) and singular (classroomid) field names
-      const cid = String(
-        lec.classroomids?.[0] ?? lec.classroomid ?? ""
-      );
-      const tid = String(
-        lec.teacherids?.[0] ?? lec.teacherid ?? ""
-      );
-      const teacher = teacherMap.get(tid);
-      return ({
-      subject:
-        subjectMap.get(sid)?.name ||
-        subjectMap.get(sid)?.short ||
-        lec.subjectid ||
-        "Unknown",
-      subjectShort: subjectMap.get(sid)?.short || "?",
-      classroom: classroomMap.get(cid)?.short || "–",
-      teacher: teacher?.short || "–",
-      teacherFull:
-        [teacher?.firstname, teacher?.lastname].filter(Boolean).join(" ") ||
-        teacher?.short || "–",
-      date: lec.date,
-      starttime: lec.starttime,
-      endtime: lec.endtime,
-      periodno: lec.uniperiod,
-      color: lec.colors?.[0] || "#6366f1",
-      changed: lec.changed || false,
-      subgroup: lec.groupnames?.[0] || null,
-    });});
+      // EduPage uses both plural (classroomids) and singular (classroomid) names
+      const roomIds = lec.classroomids ?? (lec.classroomid ? [lec.classroomid] : []);
+      const teacherIds = lec.teacherids ?? (lec.teacherid ? [lec.teacherid] : []);
+      const firstTeacher = teacherMap.get(String(teacherIds[0]));
+
+      const entry = {
+        subject:
+          subjectMap.get(sid)?.name ||
+          subjectMap.get(sid)?.short ||
+          "Unknown subject",
+        subjectShort: subjectMap.get(sid)?.short || "?",
+        classroom: namesFor(roomIds, classroomMap, "short") || "–",
+        teacher: namesFor(teacherIds, teacherMap, "short") || "–",
+        teacherFull:
+          namesFor(teacherIds, teacherMap, "short") ||
+          [firstTeacher?.firstname, firstTeacher?.lastname]
+            .filter(Boolean)
+            .join(" ") ||
+          "–",
+        date: lec.date,
+        starttime: lec.starttime,
+        endtime: lec.endtime,
+        periodno: lec.uniperiod,
+        color: lec.colors?.[0] || null,
+        changed: lec.changed || false,
+        subgroup: lec.groupnames?.[0] || null,
+      };
+
+      (byDate[lec.date] ||= []).push(entry);
+    });
+
+    Object.values(byDate).forEach((day) =>
+      day.sort((a, b) => a.starttime.localeCompare(b.starttime))
+    );
+
+    return byDate;
   }, [currentData, subjects, classrooms, teachers]);
+
+  const lectures = useMemo(
+    () => (weekLectures ? weekLectures[date] || [] : null),
+    [weekLectures, date]
+  );
+
+  // Per-day class counts drive the load dots in the week strip
+  const weekCounts = useMemo(() => {
+    if (!weekLectures) return {};
+    return Object.fromEntries(
+      Object.entries(weekLectures).map(([d, list]) => [d, list.length])
+    );
+  }, [weekLectures]);
 
   // Check if a lecture has a room/teacher change from Firebase
   const getLectureChange = (lecture) => {
@@ -263,12 +336,14 @@ const App = () => {
     return () => unsub();
   }, [date, selectedGroup]);
 
-  // Sync URL params
+  // Sync URL params. The viewed date is deliberately NOT persisted here: the
+  // browser and PWA relaunch the last URL, so a stored date would reopen the
+  // app on a stale day.
   useEffect(() => {
     if (selectedGroup) {
-      setSearchParams({ date, group: selectedGroup.short }, { replace: true });
+      setSearchParams({ group: selectedGroup.short }, { replace: true });
     }
-  }, [date, selectedGroup]);
+  }, [selectedGroup]);
 
   // Handle URL group param on load (URL overrides, e.g. shared link)
   useEffect(() => {
@@ -295,9 +370,12 @@ const App = () => {
     setDate(newDate);
   };
 
-  const goToToday = () => setDate(moment().format("YYYY-MM-DD"));
+  const goToToday = () => setDate(today());
 
-  const isLoading = !!selectedGroup && currentLoading;
+  // Also "loading" while this year's group list (needed to resolve the id)
+  // has not arrived yet
+  const isLoading =
+    !!selectedGroup && (currentLoading || yearGroups.length === 0);
 
   return (
     <div className="app-root">
@@ -307,7 +385,11 @@ const App = () => {
       />
 
       <main className="main-content">
-        <WeekStrip currentDate={date} onSelectDate={setDate} />
+        <WeekStrip
+          currentDate={date}
+          onSelectDate={setDate}
+          weekCounts={weekCounts}
+        />
 
         <ScheduleView
           date={date}

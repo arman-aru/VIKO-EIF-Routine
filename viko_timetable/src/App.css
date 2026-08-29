@@ -172,36 +172,7 @@ input, textarea, select { touch-action: manipulation; }
   flex-shrink: 0;
 }
 
-/* Telegram button */
-.tg-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 11px;
-  border-radius: 20px;
-  background: #229ED9;
-  color: white;
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: none;
-  transition: all 0.2s;
-  white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(34, 158, 217, 0.35);
-}
-
-.tg-btn:hover {
-  background: #1a8bbf;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(34, 158, 217, 0.5);
-}
-
-.tg-btn-label {
-  /* hide text on very small screens, show icon only */
-}
-
 @media (max-width: 400px) {
-  .tg-btn-label { display: none; }
-  .tg-btn { padding: 7px 9px; }
   .group-chip { padding: 6px 9px; font-size: 12px; }
   .header-subtitle { display: none; }
 }
