@@ -109,6 +109,11 @@ const App = () => {
   const weekStart = moment(date).startOf("isoWeek").format("YYYY-MM-DD");
   const weekEnd = moment(date).endOf("isoWeek").format("YYYY-MM-DD");
 
+  // The strip can be swiped a week either side, so pull those too — their
+  // class-count dots are then already there when the week comes into view.
+  const rangeStart = moment(weekStart).subtract(1, "week").format("YYYY-MM-DD");
+  const rangeEnd = moment(weekEnd).add(1, "week").format("YYYY-MM-DD");
+
   const { data: allInfo } = useFetch(
     `${API_URL}/all`,
     getPayload(weekStart, weekEnd, true, undefined, academicYear),
@@ -126,12 +131,12 @@ const App = () => {
     );
   }, [yearGroups, selectedGroup]);
 
-  // Fetch the whole ISO week in one request, then slice it by day locally.
-  // Switching days becomes instant, and it gives the week strip real per-day
-  // class counts instead of a blind row of numbers.
+  // Fetch three weeks in one request, then slice by day locally. Switching
+  // days and swiping weeks become instant, and it gives the week strip real
+  // per-day class counts instead of a blind row of numbers.
   const { data: currentData, loading: currentLoading } = useFetch(
     resolvedGroupId ? `${API_URL}/current` : null,
-    getPayload(weekStart, weekEnd, false, resolvedGroupId, academicYear),
+    getPayload(rangeStart, rangeEnd, false, resolvedGroupId, academicYear),
     `${weekStart}:${academicYear}`,
     resolvedGroupId,
     refreshKey
