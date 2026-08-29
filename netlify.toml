@@ -59,6 +59,20 @@
   [headers.values]
     Cache-Control = "no-cache, no-store, must-revalidate"
 
+# ─── Service worker — must always revalidate ──────────────────────────
+# Browsers may otherwise serve sw.js from the HTTP cache for up to 24h,
+# which hides new deploys from installed PWAs.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+# ─── Self-hosted fonts — stable filenames, cache hard ─────────────────
+[[headers]]
+  for = "/fonts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 [[headers]]
   for = "/manifest.webmanifest"
   [headers.values]
