@@ -1,5 +1,5 @@
 import moment from "moment";
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { Route, Routes, useSearchParams } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -39,29 +39,19 @@ const App = () => {
     setSearchParams(next, { replace: true });
   }, []);
 
-  // The calendar day the app last saw. Used to snap back to today when the day
-  // has actually rolled over — leaving same-day browsing undisturbed.
-  const lastSeenDay = useRef(today());
-
-  // Auto-reset to today when:
-  // 1. The app is reopened/refocused on a later calendar day
-  // 2. Midnight passes while the app is open
+  // Reopening the app always lands on today. An earlier version only reset
+  // when the calendar day had changed, which left the week strip showing an
+  // old week whenever someone browsed another date and came back the same day.
   useEffect(() => {
-    const syncToToday = () => {
-      const now = today();
-      if (now === lastSeenDay.current) return;
-      lastSeenDay.current = now;
-      setDate(now);
-    };
+    const syncToToday = () => setDate(today());
 
     const onVisible = () => {
       if (document.visibilityState === "visible") syncToToday();
     };
 
+    // visibilitychange covers app resume and tab switching; pageshow covers
+    // bfcache restores, which is how mobile PWAs usually return to the front
     document.addEventListener("visibilitychange", onVisible);
-    // focus covers desktop tab switching; pageshow covers bfcache restores,
-    // which is how mobile PWAs usually come back to the foreground
-    window.addEventListener("focus", syncToToday);
     window.addEventListener("pageshow", syncToToday);
 
     // Fire exactly at the next midnight, then reschedule
@@ -69,8 +59,7 @@ const App = () => {
     const scheduleAtMidnight = () => {
       const msUntilMidnight = moment().endOf("day").add(1, "ms").diff(moment());
       timer = setTimeout(() => {
-        lastSeenDay.current = today();
-        setDate(lastSeenDay.current);
+        syncToToday();
         scheduleAtMidnight();
       }, msUntilMidnight);
     };
@@ -78,7 +67,6 @@ const App = () => {
 
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", syncToToday);
       window.removeEventListener("pageshow", syncToToday);
       clearTimeout(timer);
     };
