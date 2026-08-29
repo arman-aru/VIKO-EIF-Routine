@@ -309,12 +309,29 @@ button {
 
 /* ── Week strip ─────────────────────────────────────────────────────── */
 
+/* Swipeable week pager: three weeks side by side, middle one centred */
+.week-scroller {
+  max-width: var(--shell);
+  margin-inline: auto;
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  /* Stop a swipe turning into browser back-navigation */
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.week-scroller::-webkit-scrollbar {
+  display: none;
+}
+
 .week {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
-  max-width: var(--shell);
-  margin-inline: auto;
   padding: 2px var(--gutter) 10px;
 }
 
