@@ -14,7 +14,7 @@ export default defineConfig({
       manifest: {
         name: "VIKO EIF Timetable",
         short_name: "VIKO EIF",
-        description: "VIKO EIF lecture timetable — view your class schedule and get daily Telegram notifications.",
+        description: "VIKO EIF lecture timetable — view your class schedule.",
         theme_color: "#005baa",
         background_color: "#060c14",
         display: "standalone",

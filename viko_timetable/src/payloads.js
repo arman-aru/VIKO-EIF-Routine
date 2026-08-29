@@ -1,9 +1,15 @@
-export const getPayload = (datefrom, dateto, all = false, groupId = "-992") => {
+export const getPayload = (
+  datefrom,
+  dateto,
+  all = false,
+  groupId = "-992",
+  year
+) => {
   if (all) {
     return {
       __args: [
         null,
-        2025,
+        year,
         {
           vt_filter: { datefrom, dateto },
         },
@@ -26,7 +32,7 @@ export const getPayload = (datefrom, dateto, all = false, groupId = "-992") => {
     __args: [
       null,
       {
-        year: 2025,
+        year,
         datefrom,
         dateto,
         table: "classes",

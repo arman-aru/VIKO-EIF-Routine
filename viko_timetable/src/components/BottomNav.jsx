@@ -2,7 +2,9 @@ import moment from "moment";
 
 const BottomNav = ({ date, onPrev, onNext, onToday }) => {
   const isToday = moment(date).isSame(moment(), "day");
-  const displayDate = moment(date).format("D MMM");
+  // Always the real current date — this button is a shortcut *to* today, so
+  // labelling it with the viewed day made it read as the wrong date.
+  const displayDate = moment().format("D MMM");
 
   return (
     <nav className="bottom-nav">
