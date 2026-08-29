@@ -22,16 +22,12 @@ const App = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { API_URL } = useContext(AppContext);
 
-  // Date state — a shared link may deep-link to a specific day, otherwise today
-  const [date, setDate] = useState(() => {
-    const shared = searchParams.get("date");
-    return shared && moment(shared, "YYYY-MM-DD", true).isValid()
-      ? shared
-      : today();
-  });
+  // Always open on today. Earlier builds persisted the viewed date into the
+  // URL, and an installed PWA relaunches the URL it saved — so honouring an
+  // incoming ?date= reopened the app on a months-old day.
+  const [date, setDate] = useState(today);
 
-  // Drop the deep-linked date from the URL once consumed, so a later reload or
-  // PWA relaunch of this same URL opens on today instead of a stale day.
+  // Strip any leftover date param so it can never come back on a reload
   useEffect(() => {
     if (!searchParams.get("date")) return;
     const next = new URLSearchParams(searchParams);
