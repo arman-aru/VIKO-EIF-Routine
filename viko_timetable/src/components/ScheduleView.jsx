@@ -1,10 +1,12 @@
 import moment from "moment";
 import { useMemo, useState } from "react";
 import { useNow } from "../hooks/useNow";
-import { buildTimeline, formatDuration, getNowPlacement } from "../utils/schedule";
+import { buildTimeline, formatDuration } from "../utils/schedule";
 import LectureCard from "./LectureCard";
+import SourceNote from "./SourceNote";
 import {
   FreeDayIcon,
+  OfflineIcon,
   RefreshIcon,
   SelectGroupIcon,
   WeekendIcon,
@@ -57,15 +59,6 @@ const RefreshButton = ({ onRefresh, isLoading }) => {
   );
 };
 
-/** The live marker, shown when the clock isn't inside a lesson. */
-const NowMarker = ({ now }) => (
-  <div className="now-marker">
-    <span className="now-marker__dot" />
-    <span className="now-marker__rule" />
-    <span className="now-marker__time">{now.format("HH:mm")}</span>
-  </div>
-);
-
 const BreakRow = ({ minutes, isNow }) => (
   <div className={`break ${isNow ? "break--now" : ""}`}>
     <span className="break__thread" aria-hidden="true" />
@@ -79,6 +72,7 @@ const ScheduleView = ({
   date,
   lectures,
   isLoading,
+  hasError,
   selectedGroup,
   getLectureChange,
   onSelectGroup,
@@ -101,11 +95,10 @@ const ScheduleView = ({
     () => buildTimeline(lectures, date, now),
     [lectures, date, now]
   );
-  const nowPlacement = getNowPlacement(rows, date, now);
 
   const count = lectures?.length ?? 0;
   const hasGroup = !!selectedGroup;
-  const showCount = hasGroup && lectures && !isLoading;
+  const showCount = hasGroup && lectures && !isLoading && !hasError;
 
   return (
     <section className="day">
@@ -138,6 +131,17 @@ const ScheduleView = ({
               </button>
             }
           />
+        ) : hasError ? (
+          <EmptyState
+            icon={OfflineIcon}
+            title="Couldn't load timetable"
+            body="Check your connection and try again."
+            action={
+              <button className="btn btn--primary" onClick={onRefresh}>
+                Try again
+              </button>
+            }
+          />
         ) : isLoading ? (
           <div className="rail">
             <SkeletonRow />
@@ -146,7 +150,6 @@ const ScheduleView = ({
           </div>
         ) : count > 0 ? (
           <div className="rail" key={date}>
-            {nowPlacement === "before" && <NowMarker now={now} />}
             {rows.map((row, i) =>
               row.kind === "break" ? (
                 <BreakRow key={`b${i}`} minutes={row.minutes} isNow={row.isNow} />
@@ -158,7 +161,6 @@ const ScheduleView = ({
                 />
               )
             )}
-            {nowPlacement === "after" && <NowMarker now={now} />}
           </div>
         ) : isWeekend ? (
           <EmptyState
@@ -174,6 +176,8 @@ const ScheduleView = ({
           />
         )}
       </div>
+
+      <SourceNote />
     </section>
   );
 };

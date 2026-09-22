@@ -110,7 +110,7 @@ const App = () => {
   const rangeStart = moment(weekStart).subtract(1, "week").format("YYYY-MM-DD");
   const rangeEnd = moment(weekEnd).add(1, "week").format("YYYY-MM-DD");
 
-  const { data: allInfo } = useFetch(
+  const { data: allInfo, error: allError } = useFetch(
     `${API_URL}/all`,
     getPayload(weekStart, weekEnd, true, undefined, academicYear),
     `${weekStart}:${academicYear}`,
@@ -130,7 +130,11 @@ const App = () => {
   // Fetch three weeks in one request, then slice by day locally. Switching
   // days and swiping weeks become instant, and it gives the week strip real
   // per-day class counts instead of a blind row of numbers.
-  const { data: currentData, loading: currentLoading } = useFetch(
+  const {
+    data: currentData,
+    loading: currentLoading,
+    error: currentError,
+  } = useFetch(
     resolvedGroupId ? `${API_URL}/current` : null,
     getPayload(rangeStart, rangeEnd, false, resolvedGroupId, academicYear),
     `${weekStart}:${academicYear}`,
@@ -367,8 +371,16 @@ const App = () => {
 
   // Also "loading" while this year's group list (needed to resolve the id)
   // has not arrived yet
+  // Without this year's groups the timetable can't be requested at all, so a
+  // failed /all is only fatal while no cached group list is available
+  const hasLoadError =
+    !!selectedGroup &&
+    (!!currentError || (!!allError && yearGroups.length === 0));
+
   const isLoading =
-    !!selectedGroup && (currentLoading || yearGroups.length === 0);
+    !!selectedGroup &&
+    !hasLoadError &&
+    (currentLoading || yearGroups.length === 0);
 
   return (
     <div className="app-root">
@@ -391,6 +403,7 @@ const App = () => {
           date={date}
           lectures={lectures}
           isLoading={isLoading}
+          hasError={hasLoadError}
           selectedGroup={selectedGroup}
           getLectureChange={getLectureChange}
           onSelectGroup={() => setShowGroupModal(true)}

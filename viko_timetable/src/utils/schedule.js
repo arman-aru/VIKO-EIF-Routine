@@ -88,15 +88,3 @@ export const buildTimeline = (lectures, date, now) => {
 
   return rows;
 };
-
-/** Where the live marker belongs when no lesson is currently running. */
-export const getNowPlacement = (rows, date, now) => {
-  if (!moment(now).isSame(moment(date, "YYYY-MM-DD"), "day")) return null;
-  if (rows.some((r) => r.kind === "lecture" && r.status === "live")) return null;
-
-  const lectures = rows.filter((r) => r.kind === "lecture");
-  if (!lectures.length) return null;
-  if (now.isBefore(lectures[0].start)) return "before";
-  if (now.isAfter(lectures[lectures.length - 1].end)) return "after";
-  return null; // sits inside a gap — the break row shows it instead
-};
