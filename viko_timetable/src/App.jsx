@@ -4,7 +4,7 @@ import { Route, Routes, useSearchParams } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { AppContext } from "./context/AppContext";
-import { db, limitToLast, onValue, orderByChild, query, ref } from "./firebaseConfig";
+import { db, equalTo, onValue, orderByChild, query, ref } from "./firebaseConfig";
 import { getPayload } from "./payloads";
 import useFetch from "./useFetch";
 import { getAcademicYear } from "./utils/academicYear";
@@ -17,6 +17,14 @@ import ScheduleView from "./components/ScheduleView";
 import WeekStrip from "./components/WeekStrip";
 
 const today = () => moment().format("YYYY-MM-DD");
+
+// A post's group reads like "<b>PI25E</b>" or "IS25 (I pogrupis)". Match whole
+// codes only, so a PI25 student never sees PI25E's changes.
+const postMatchesGroup = (grupe, groupShort) =>
+  (grupe || "")
+    .replace(/<[^>]*>/g, "")
+    .split(/[^A-Za-z0-9]+/)
+    .some((code) => code.toUpperCase() === groupShort);
 
 const App = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -310,25 +318,38 @@ const App = () => {
     return changedLectures.find((p) => p.paskaita === lecture.periodno) || null;
   };
 
-  // Firebase: listen for changed lectures for current date/group
+  // Firebase: listen for changed lectures for current date/group.
+  // Posts store the date as "Wed Sep 23 2026", so ask Firebase for that exact
+  // string rather than parsing dates in the browser (Safari can't parse it)
+  // or taking a fixed number of recent posts (today's can fall outside it).
   useEffect(() => {
-    const dbRef = ref(db, "user-posts/");
-    const orderedQuery = query(dbRef, orderByChild("paskaita"), limitToLast(50));
+    if (!selectedGroup) {
+      setChangedLectures([]);
+      return;
+    }
 
-    const unsub = onValue(orderedQuery, (snapshot) => {
-      const posts = [];
-      const targetDate = moment(date, "YYYY-MM-DD").format("ddd MMM DD YYYY");
-      snapshot.forEach((child) => {
-        const val = child.val();
-        if (
-          moment(val.date, "ddd MMM DD YYYY").isSame(targetDate, "day") &&
-          val.grupe?.replace(/<[^>]*>/g, "").includes(selectedGroup?.short || "")
-        ) {
-          posts.push(val);
-        }
-      });
-      setChangedLectures(posts);
-    });
+    const targetDate = moment(date, "YYYY-MM-DD").format("ddd MMM DD YYYY");
+    const dayQuery = query(
+      ref(db, "user-posts/"),
+      orderByChild("date"),
+      equalTo(targetDate)
+    );
+
+    const unsub = onValue(
+      dayQuery,
+      (snapshot) => {
+        const posts = [];
+        snapshot.forEach((child) => {
+          const val = child.val();
+          if (postMatchesGroup(val.grupe, selectedGroup.short)) posts.push(val);
+        });
+        setChangedLectures(posts);
+      },
+      (err) => {
+        console.error("Firebase changes listener failed:", err.message);
+        setChangedLectures([]);
+      }
+    );
 
     return () => unsub();
   }, [date, selectedGroup]);

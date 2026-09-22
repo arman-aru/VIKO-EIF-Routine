@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import {
+  equalTo,
   getDatabase,
-  limitToLast,
   onValue,
   orderByChild,
   query,
@@ -21,4 +21,4 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
 
-export { db, limitToLast, onValue, orderByChild, query, ref };
+export { db, equalTo, onValue, orderByChild, query, ref };
