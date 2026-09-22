@@ -116,4 +116,12 @@ export const OfflineIcon = (p) => (
   </Icon>
 );
 
+/** Verified source — a shield with a tick. */
+export const VerifiedIcon = (p) => (
+  <Icon {...p}>
+    <path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z" />
+    <path d="M9 12l2 2 4-4" />
+  </Icon>
+);
+
 export default Icon;
