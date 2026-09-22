@@ -155,7 +155,8 @@ const ScheduleView = ({
                 <BreakRow key={`b${i}`} minutes={row.minutes} isNow={row.isNow} />
               ) : (
                 <LectureCard
-                  key={`${row.lecture.periodno}-${row.lecture.starttime}`}
+                  // Subgroups can share a period, so the row index keeps keys unique
+                  key={`${i}-${row.lecture.periodno}-${row.lecture.starttime}`}
                   row={row}
                   change={getLectureChange(row.lecture)}
                 />
