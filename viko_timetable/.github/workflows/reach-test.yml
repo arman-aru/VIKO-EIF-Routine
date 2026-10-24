@@ -1,0 +1,10 @@
+name: EduPage reachability test
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call EIF EduPage
+        run: |
+          B='{"__args":[null,"2026",{"vt_filter":{"datefrom":"2026-10-26","dateto":"2026-11-01"}},{"op":"fetch","needed_part":{"classes":["id","short"]},"needed_combos":{}}],"__gsh":"00000000"}'
+          curl -sS -m 30 -w "\nHTTP %{http_code} in %{time_total}s\n" -X POST "https://vikoeif.edupage.org/rpr/server/maindbi.js?__func=mainDBIAccessor" -H 'Content-Type: application/json' -d "$B" | tail -c 300
