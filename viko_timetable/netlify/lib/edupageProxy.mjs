@@ -1,5 +1,7 @@
 // Forwards timetable requests to EduPage from the same origin as the app,
 // so production needs no separately hosted backend and no CORS setup.
+// Runs as Edge Functions: EduPage drops connections from Netlify's
+// AWS Lambda IPs, so regular Netlify Functions time out.
 
 export const EDUPAGE_ENDPOINTS = {
   all: "https://vikoeif.edupage.org/rpr/server/maindbi.js?__func=mainDBIAccessor",
